@@ -20,9 +20,11 @@ export function createApp() {
       origin: (origin, callback) => {
         // Allow requests with no origin (like mobile apps, curl, or server-to-server)
         if (!origin) return callback(null, true);
+        const normalized = origin.replace(/\/+$/, '');
         if (
           env.NODE_ENV === 'development' ||
           env.corsOriginsList.includes('*') ||
+          env.corsOriginsList.includes(normalized) ||
           env.corsOriginsList.includes(origin)
         ) {
           return callback(null, true);

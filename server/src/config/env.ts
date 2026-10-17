@@ -21,5 +21,7 @@ if (!parsed.success) {
 
 export const env = {
   ...parsed.data,
-  corsOriginsList: parsed.data.CORS_ORIGINS.split(',').map((origin) => origin.trim()),
+  corsOriginsList: parsed.data.CORS_ORIGINS.split(',').map((origin) =>
+    origin.trim().replace(/\/+$/, '')
+  ),
 };

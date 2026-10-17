@@ -3,10 +3,11 @@ node_modules/
 .pnp/
 .pnp.js
 
-# Build outputs
+# Build outputs & cache
 dist/
 build/
 coverage/
+*.tsbuildinfo
 
 # Environment files
 .env

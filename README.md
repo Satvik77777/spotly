@@ -24,9 +24,100 @@
 
 ---
 
-## 📋 Assignment Requirements & Compliance Matrix
+## 🏛️ Application Architecture & Key Technical Decisions
 
-This project was built to fulfill 100% of the specifications from the **Interactive Map Web Application Assignment**:
+> *This section addresses **Deliverable #4** of the assignment: "A brief explanation of your application architecture and key technical decisions."*
+
+Spotly is engineered as a decoupled, three-tier modular application prioritizing strict type safety, real database persistence (no localStorage or in-memory mocks), and predictable data contracts.
+
+```mermaid
+graph TD
+    subgraph Browser ["Client Tier (React 18 + Vite + Tailwind CSS)"]
+        UI["UI Layer<br/>(Leaflet Map + Sidebar + Cards + Modals)"]
+        RHF["Form Layer<br/>(React Hook Form + Zod Resolver)"]
+        Cache["Server State & Cache<br/>(TanStack Query v5)"]
+        ClientAPI["HTTP Client<br/>(Axios Base Instance)"]
+    end
+
+    subgraph Server ["Server Tier (Node.js 22 + Express + TypeScript)"]
+        Router["REST Endpoints<br/>(/api/locations, /api/health)"]
+        SecMiddleware["Security Pipeline<br/>(Helmet + CORS + Rate Limiter)"]
+        ValMiddleware["Validation Middleware<br/>(Zod Request Validator)"]
+        Controller["Location Controller<br/>(CRUD Handlers + Regex Sanitizer)"]
+        Model["Persistence Model<br/>(Mongoose 8 Location Schema)"]
+    end
+
+    subgraph Database ["Database Tier (Cloud Managed)"]
+        Atlas[("MongoDB Atlas Cluster<br/>(Geospatial Place Documents)")]
+    end
+
+    UI -->|User Submits / Edits| RHF
+    RHF -->|Validated Input| Cache
+    Cache -->|HTTP Mutation / Query| ClientAPI
+    ClientAPI -->|REST API Calls| SecMiddleware
+    SecMiddleware --> Router
+    Router --> ValMiddleware
+    ValMiddleware -->|Sanitized Payload| Controller
+    Controller -->|CRUD Queries| Model
+    Model -->|BSON Documents| Atlas
+    Atlas -->|Persisted Results| Model
+    Model --> Controller
+    Controller -->|Standard JSON Envelope| ClientAPI
+    ClientAPI -->|Updates Cache| Cache
+    Cache -->|Refetches / Re-renders| UI
+```
+
+### 1. Architectural Layers & Responsibilities
+
+- **Presentation Layer (`client/src/`)**:
+  - `LocationMap.tsx`: Interactive Leaflet map supporting pan, zoom, custom category-colored SVG `divIcon` pins, selection popups, and click-to-coordinate capture.
+  - `LocationSidebar.tsx` & `LocationCard.tsx`: Instant name search, category filter pills, count indicators, skeleton loaders, and card-to-map animated viewport focus (`flyTo`).
+  - `LocationFormModal.tsx`: Accessible dialog for adding or editing places with instant coordinate reflection.
+  - `DeleteConfirmModal.tsx`: Destructive confirmation barrier preventing accidental deletions.
+- **Server State & Data Layer (`client/src/features/locations/hooks/`)**:
+  - TanStack Query v5 handles query deduplication, background caching, window-focus refetching, and declarative cache invalidation upon mutations with Sonner toast feedback.
+- **Backend Service Layer (`server/src/modules/locations/`)**:
+  - Express.js with TypeScript organized in a domain-driven structure (`routes`, `controller`, `model`, `schema`).
+  - Strict middleware pipeline: security headers (`Helmet`), CORS origin checking with trailing-slash sanitization, and IP rate-limiting (`express-rate-limit`).
+  - Centralized JSON error handling guaranteeing consistent envelopes: `{ success: true, data }` or `{ success: false, error }`.
+- **Database Persistence Layer**:
+  - MongoDB Atlas cluster managed via Mongoose 8 with strict schemas, coordinate boundary constraints, and connection pooling.
+
+---
+
+### 2. Key Technical Decisions & Tradeoffs
+
+#### Decision 1: TanStack Query v5 over Redux
+- **Why**: Places data is fundamentally server-owned state. Using Redux requires dozens of boilerplate actions, reducers, and selectors just to handle `isLoading`, `isError`, and manual cache syncing.
+- **Benefit**: TanStack Query provides out-of-the-box cache deduplication, automatic background re-validation, optimistic UI updates, and instant mutation invalidation with a clean hook-based API (`useLocationsQuery`, `useCreateLocationMutation`).
+
+#### Decision 2: React Leaflet with OpenStreetMap
+- **Why**: Selected over proprietary alternatives like Mapbox or Google Maps.
+- **Benefit**: OpenStreetMap community raster tiles require zero paid API keys, zero credit card quotas, and zero danger of rate-limit lockouts during reviewer evaluation. Custom HTML `L.divIcon` pins with inline SVGs were implemented to completely bypass Leaflet's well-known Webpack/Vite asset bundler bug while delivering category-themed pins.
+
+#### Decision 3: Dual Zod Validation (Client + Server)
+- **Why**: User inputs are validated at both ends of the wire using mirrored Zod schemas.
+- **Benefit**: The client (via `react-hook-form` + `@hookform/resolvers/zod`) provides instant interactive feedback before requests are sent. The server middleware (`validateRequest`) independently guarantees that malformed requests, invalid coordinates (latitude must be between -90 and 90, longitude between -180 and 180), or unexpected category enums cannot compromise database integrity.
+
+#### Decision 4: Safe Substring Search with Regex Sanitization
+- **Why**: Users expect case-insensitive substring searching across location names.
+- **Benefit**: Implemented an `escapeRegex` utility that neutralizes special regular expression characters (e.g., `(`, `[`, `*`, `+`), completely eliminating Regular Expression Denial of Service (ReDoS) vulnerabilities and server crashes.
+
+#### Decision 5: Idempotent Database Seeding
+- **Why**: Evaluators and reviewers need a pre-populated dataset immediately on launch.
+- **Benefit**: The seed script (`server/scripts/seed.ts`) populates 12 curated Chandigarh demo locations using `findOneAndUpdate` with `{ upsert: true }` keyed on place name. It can be run repeatedly without duplicating records or destroying user-created places.
+
+#### Decision 6: Mobile-First Responsive Design
+- **Why**: Placing a full map above a scrollable list on mobile screens (< 768px) creates a "scroll trap" where touch-scroll is captured by the map instead of the page.
+- **Benefit**: Desktop provides a split-pane layout with synchronized map and sidebar. Mobile view utilizes a dedicated tab switcher (`List` / `Map`) paired with a `MapResizeHandler` that invokes `map.invalidateSize()` to eliminate grey tile artifacts when toggling.
+
+#### Decision 7: Authentication Scope Clarification
+- **Why**: Authentication was marked *Optional* in the assignment prompt.
+- **Benefit**: By intentionally omitting auth, full engineering focus was directed to rock-solid CRUD mechanics, geospatial precision, comprehensive test coverage (18 passing tests), zero lint warnings, and production cloud deployments. Endpoints are defended with `express-rate-limit` and `helmet`.
+
+---
+
+## 📋 Assignment Requirements & Compliance Matrix
 
 | Requirement | Assignment Specification | Implementation in Spotly | Status |
 | :--- | :--- | :--- | :---: |
@@ -58,58 +149,7 @@ This project was built to fulfill 100% of the specifications from the **Interact
 | **5. Deliverables** | 1. Frontend & backend source code | Complete in repository (`client/` and `server/`). | ✅ **Complete** |
 | | 2. GitHub repository | Clean Git history at `https://github.com/Satvik77777/spotly`. | ✅ **Complete** |
 | | 3. `.env.example` files | `client/.env.example` and `server/.env.example` committed. | ✅ **Complete** |
-| | 4. Architecture & technical decisions | Fully documented below in Section 4 and Section 7. | ✅ **Complete** |
-
----
-
-## 🏗️ System Architecture
-
-Spotly follows a decoupled, three-tier modular architecture designed for maintainability, strict type safety, and real-time database persistence.
-
-```mermaid
-graph TD
-    subgraph Browser ["Client Tier (React 18 + Vite + Tailwind)"]
-        UI["UI Layer<br/>(Leaflet Map + Sidebar + Cards)"]
-        RHF["Form Layer<br/>(React Hook Form + Zod)"]
-        Cache["State Management<br/>(TanStack Query Cache)"]
-        ClientAPI["HTTP Client<br/>(Axios Base Instance)"]
-    end
-
-    subgraph Server ["Server Tier (Node.js 22 + Express + TypeScript)"]
-        Router["REST Endpoints<br/>(/api/locations, /api/health)"]
-        SecMiddleware["Security Middleware<br/>(Helmet + CORS + Rate Limiter)"]
-        ValMiddleware["Validation Middleware<br/>(Zod Request Validator)"]
-        Controller["Location Controller<br/>(CRUD Handlers + Regex Sanitizer)"]
-        Model["Persistence Model<br/>(Mongoose 8 Location Schema)"]
-    end
-
-    subgraph Database ["Database Tier (Cloud Managed)"]
-        Atlas[("MongoDB Atlas Cluster<br/>(Geospatial Place Documents)")]
-    end
-
-    UI -->|User Interaction| RHF
-    RHF -->|Validated Form Payload| Cache
-    Cache -->|HTTP Mutation / Query| ClientAPI
-    ClientAPI -->|GET / POST / PATCH / DELETE| SecMiddleware
-    SecMiddleware --> Router
-    Router --> ValMiddleware
-    ValMiddleware -->|Sanitized Body & Query| Controller
-    Controller -->|Mongoose Queries| Model
-    Model -->|BSON CRUD Operations| Atlas
-    Atlas -->|Persisted Documents| Model
-    Model --> Controller
-    Controller -->|Standardized JSON Envelope| ClientAPI
-    ClientAPI -->|Cache Invalidation & Fresh Data| Cache
-    Cache -->|Synchronized Re-render| UI
-```
-
-### Data Flow Lifecycle
-1. **User Action**: The user searches, filters, clicks a card, or places a new pin on the map.
-2. **Client Validation**: React Hook Form validates inputs against a shared Zod schema before any HTTP packet leaves the browser.
-3. **Optimistic & Resilient Queries**: TanStack Query handles request deduplication, background caching, and automatic refetching on window focus.
-4. **Backend Security & Validation**: Express passes requests through Helmet, CORS origin checks, and rate-limiting before the Zod middleware validates parameters and request body.
-5. **Database Persistence**: Mongoose executes queries against MongoDB Atlas with strict schema boundaries and returns JSON-safe BSON objects.
-6. **Unified Response Envelope**: The backend always wraps responses in a predictable `{ success, data }` or `{ success, error: { message, code, details } }` contract.
+| | 4. Architecture & technical decisions | Fully documented in Section 2 above. | ✅ **Complete** |
 
 ---
 
@@ -441,34 +481,6 @@ npm run build
 - **Code Quality**:
   - `tsc --noEmit`: 0 TypeScript errors
   - `eslint .`: 0 errors, 0 warnings
-
----
-
-## 💡 Key Technical Decisions & Tradeoffs
-
-### 1. TanStack Query v5 over Redux
-**Decision**: We chose TanStack Query for all server state management instead of Redux or Context API.  
-**Rationale**: Geographic locations are fundamentally server-owned state. Redux requires substantial boilerplate (actions, reducers, thunks, selectors) to handle loading flags, error handling, and manual cache invalidation. TanStack Query provides out-of-the-box cache deduplication, automatic background re-validation on window focus, and declarative mutation invalidation in a fraction of the code.
-
-### 2. React Leaflet with OpenStreetMap
-**Decision**: We used React Leaflet backed by OpenStreetMap community raster tiles.  
-**Rationale**: OpenStreetMap provides reliable worldwide map imagery with zero proprietary API keys, zero credit-card paywalls, and zero risk of rate-limit lockouts during evaluator testing. Custom HTML `L.divIcon` pins with inline SVGs were designed to bypass Leaflet's well-known bundler asset bug while delivering vibrant, category-coded visual pins.
-
-### 3. Dual Zod Validation (Client + Server)
-**Decision**: Both the client form and server API validate input payloads using mirrored Zod schemas.  
-**Rationale**: Client validation (via `react-hook-form` + `@hookform/resolvers/zod`) provides instant interactive feedback to users before network requests occur. Server validation ensures that direct REST API calls or third-party tools cannot bypass business rules (such as latitude bounds between -90 and 90, or allowable category enums).
-
-### 4. Idempotent Database Seeding
-**Decision**: The seeder script (`server/scripts/seed.ts`) uses `findOneAndUpdate` with `{ upsert: true }` keyed on place name.  
-**Rationale**: Rather than destructively wiping the entire database on every seed, idempotent upserts allow the demo dataset to be refreshed or added to a live MongoDB Atlas cluster without deleting user-created places.
-
-### 5. Mobile-First Responsive Design
-**Decision**: A full-height desktop layout with synchronized card/map views, paired with a dedicated mobile tab switcher (`List` / `Map`).  
-**Rationale**: On mobile screens (< 768px), stacking a large map above a long list creates a poor experience ("scroll trap"). The mobile tab switcher provides a full-screen interactive map or a full-screen browse list, with a dynamic `MapResizeHandler` calling `map.invalidateSize()` to eliminate grey tile artifacts when switching views.
-
-### 6. Scope Clarification: Authentication
-**Decision**: User authentication (JWT/session login) was marked *Optional* in the assignment prompt and was omitted in this release.  
-**Rationale**: By focusing on the core functional requirements, we delivered an exceptionally high-quality geospatial CRUD application with full test coverage, robust error boundaries, strict validation, responsive UI, and live cloud deployments. IP-based rate limiting (`express-rate-limit`) and Helmet HTTP security headers are included to safeguard public endpoints.
 
 ---
 
